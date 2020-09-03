@@ -1,0 +1,149 @@
+---
+- hosts: all
+  become: true
+  vars:
+    sysctl_config:
+      net.ipv4.ip_forward: 1
+      net.bridge.bridge-nf-call-ip6tables: 1
+      net.bridge.bridge-nf-call-iptables: 1
+
+  tasks:
+  - name: Clean up legacy join command
+    become: false
+    local_action: file path=./join-command state=absent
+
+  - name: upgrade all packages
+    yum: 
+      name: '*' 
+      state: latest
+
+  - name: Disable SELinux
+    selinux: 
+      policy: targeted
+      state: permissive
+  
+  - name: Set SELinux in permissive mode until next reboot
+    command: setenforce 0
+
+  - name: Disable firewalld service
+    systemd:
+      name: firewalld
+      state: stopped
+      enabled: no
+
+  - name: Remove swapfile from /etc/fstab
+    mount:
+      name: "{{ item }}"
+      fstype: swap
+      state: absent
+    with_items:
+      - swap
+      - none
+
+  - name: Disable swap
+    command: swapoff -a
+    when: ansible_swaptotal_mb > 0
+
+  - name: Bridging container traffices
+    sysctl:
+      name: '{{ item.key }}' 
+      value: '{{ item.value }}'
+      sysctl_set: yes
+      state: present
+      reload: yes
+      ignoreerrors: yes
+    with_dict: '{{ sysctl_config }}'
+
+  - name: Create k8s repo
+    yum_repository: 
+      name: Kubernetes
+      description: Kubernetes
+      baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+      gpgcheck: yes
+      enabled: yes
+      repo_gpgcheck: yes
+      gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+
+  - name: Install kubeadm & docker packages
+    yum:
+      name: "{{ packages }}"
+      state: present
+    vars:
+      packages:
+        - docker
+        - kubeadm
+        - kubectl
+  
+  - name: Enable and start docker service
+    systemd:
+      name: docker
+      state: started
+      enabled: yes
+
+  - name: Enable and restart kubelet service
+    systemd:
+      name: kubelet
+      state: restarted
+      enabled: yes
+
+  - name: Add vagrant user to docker group
+    user:
+      name: vagrant
+      group: dockerroot
+  
+  - name: Initialize the Kubernetes cluster using kubeadm
+    command: kubeadm init --apiserver-advertise-address="192.168.122.88" --apiserver-cert-extra-sans="192.168.122.88" --node-name k8s-master --pod-network-cidr=10.0.0.0/8
+    become: yes
+    become_user: root
+
+  - name: Check if directory `/home/vagrant/.kube` exists
+    stat:
+      path: /home/vagrant/.kube
+    register: vagrant_home_kube_folder_info
+
+  - name: Echo if directory `/home/vagrant/.kube` already exists
+    debug:
+      msg: "the /home/vagrant/.kube directory already exists"
+    when: vagrant_home_kube_folder_info.stat.exists
+  
+  - name: Create directory `/home/vagrant/.kube`
+    file:
+      path: /home/vagrant/.kube
+      state: directory
+      mode: 0755
+      group: vagrant
+      owner: vagrant
+    when: vagrant_home_kube_folder_info.stat.exists == false
+
+  - name: Copy kubernetes admin config for user vagrant
+    copy:
+      src: /etc/kubernetes/admin.conf
+      remote_src: yes
+      dest: /home/vagrant/.kube/config
+      owner: vagrant
+      group: vagrant
+
+  - name: Install flannel pod network
+    become: false
+    command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+  - name: Generate join command
+    command: kubeadm token create --print-join-command
+    become: yes
+    become_user: root
+    register: join_command
+
+  - name: Copy join_command to shared local file
+    become: false
+    local_action: copy content="{{ join_command.stdout_lines[0] }}" dest=./join-command
+
+  - name: Double check `./join-command` contents
+    become: false
+    local_action: debug msg="{{ lookup('file', './join-command') }}"
+
+  handlers:
+    - name: docker status
+      service: 
+        name: docker 
+        state: started
+

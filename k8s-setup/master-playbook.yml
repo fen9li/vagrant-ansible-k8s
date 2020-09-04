@@ -141,6 +141,10 @@
     become: false
     local_action: debug msg="{{ lookup('file', './join-command') }}"
 
+  - name: Create a 5GiB NFS persistent volume from an external NFS server
+    become: false
+    command: kubectl apply -f /vagrant/k8s-setup/nfs-pv.yaml
+
   handlers:
     - name: docker status
       service: 

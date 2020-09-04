@@ -2,12 +2,41 @@
 ## Purpose
 
 This repo can be used to quickly setup a multi node Kubernetes cluster for developing, testing, training and demo purposes locally, by using Vagrant and Ansible. 
+The environment will also create a NFS type Persistent Volume, which comes from the Vagrant host.
 
 ## Prerequites
 
   - A suitable host here should be a CentOS 7 machine, physical or virtual.
   - Vagrant and vagrant-libvirt have been installed on this host and `libvirt` will be used as Vagrant VM provider.
   - Ansible has been installed on this host and Vagrant VM will be provisioned by using Ansible playbooks.
+  - NFS server has been configured and tested.
+
+```
+[...@koala ~]$ uname -a
+Linux koala.fen9.li 3.10.0-1062.el7.x86_64 #1 SMP Wed Aug 7 18:08:02 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
+[...@koala ~]$ 
+
+[...@koala ~]$ vagrant version
+Installed Version: 2.2.10
+Latest Version: 2.2.10
+ 
+You're running an up-to-date version of Vagrant!
+[...@koala ~]$ 
+
+[...@koala ~]$ ansible --version
+ansible 2.9.10
+  config file = /etc/ansible/ansible.cfg
+  configured module search path = [u'/home/fli/.ansible/plugins/modules', u'/usr/share/ansible/plugins/modules']
+  ansible python module location = /usr/lib/python2.7/site-packages/ansible
+  executable location = /usr/bin/ansible
+  python version = 2.7.5 (default, Aug  7 2019, 00:51:29) [GCC 4.8.5 20150623 (Red Hat 4.8.5-39)]
+[...@koala ~]$ 
+
+[...@koala ~]$ showmount -e localhost
+Export list for localhost:
+/srv/nfs 192.168.122.*
+[...@koala ~]$ 
+```
 
 ## Usage
 
@@ -91,6 +120,23 @@ kube-system   kube-proxy-vhkg5                     1/1     Running   0          
 kube-system   kube-proxy-znddm                     1/1     Running   0          60m
 kube-system   kube-scheduler-k8s-master            1/1     Running   0          60m
 [vagrant@k8s-master ~]$
+
+[vagrant@k8s-master ~]$ kubectl get pv
+NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   REASON   AGE
+pv0001-nfs   5Gi        RWX            Recycle          Available           slow                    8m23s
+[vagrant@k8s-master ~]$ 
+
+[vagrant@k8s-master ~]$ df -hT
+Filesystem     Type      Size  Used Avail Use% Mounted on
+devtmpfs       devtmpfs  912M     0  912M   0% /dev
+tmpfs          tmpfs     919M     0  919M   0% /dev/shm
+tmpfs          tmpfs     919M   11M  909M   2% /run
+tmpfs          tmpfs     919M     0  919M   0% /sys/fs/cgroup
+/dev/vda1      xfs        40G  4.6G   36G  12% /
+tmpfs          tmpfs     184M     0  184M   0% /run/user/0
+tmpfs          tmpfs     184M     0  184M   0% /run/user/1000
+[vagrant@k8s-master ~]$ 
+
 [vagrant@k8s-master ~]$ exit
 logout
 Connection to 192.168.121.210 closed.

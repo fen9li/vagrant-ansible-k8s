@@ -141,9 +141,27 @@
     become: false
     local_action: debug msg="{{ lookup('file', './join-command') }}"
 
-  - name: Create a 5GiB NFS persistent volume from an external NFS server
+  - name: Create sample NFS persistent volumes from an external NFS server
     become: false
     command: kubectl apply -f /vagrant/k8s-setup/nfs-pv.yaml
+
+  - name: Download `get_helm.sh` for helm 3
+    get_url:
+      url: https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+      dest: /tmp/get_helm.sh
+
+  # Example that prints return information from the previous task
+  - name: get environment variables
+    shell: printenv
+    register: result
+
+  - name: print environment variables
+    debug:
+      var: result
+      verbosity: 2
+
+  # - name: Install helm 3
+  #   command: sh /tmp/get_helm.sh
 
   handlers:
     - name: docker status
